@@ -12,7 +12,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/register')
+        .post('/auth/register')
         .send(userData)
         .expect(201);
 
@@ -27,7 +27,7 @@ describe('Authentication Integration Tests', () => {
 
     it('should return 400 for missing required fields', async () => {
       const response = await request(app)
-        .post('/register')
+        .post('/auth/register')
         .send({ username: 'testuser' })
         .expect(400);
 
@@ -46,7 +46,7 @@ describe('Authentication Integration Tests', () => {
 
       // Try to register again
       const response = await request(app)
-        .post('/register')
+        .post('/auth/register')
         .send(userData)
         .expect(400);
 
@@ -61,7 +61,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/register')
+        .post('/auth/register')
         .send(userData)
         .expect(400);
 
@@ -76,7 +76,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/register')
+        .post('/auth/register')
         .send(userData)
         .expect(400);
 
@@ -102,7 +102,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/login')
+        .post('/auth/login')
         .send(loginData)
         .expect(200);
 
@@ -120,7 +120,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/login')
+        .post('/auth/login')
         .send(loginData)
         .expect(200);
 
@@ -137,7 +137,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/login')
+        .post('/auth/login')
         .send(loginData)
         .expect(401);
 
@@ -151,7 +151,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/login')
+        .post('/auth/login')
         .send(loginData)
         .expect(401);
 
@@ -160,7 +160,7 @@ describe('Authentication Integration Tests', () => {
 
     it('should return 400 for missing fields', async () => {
       const response = await request(app)
-        .post('/login')
+        .post('/auth/login')
         .send({ identifier: 'testuser' })
         .expect(400);
 
