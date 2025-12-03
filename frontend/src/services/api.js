@@ -118,21 +118,34 @@ class ApiService {
   }
 
   /**
-   * Login user
-   * @param {string} email - User email
+   * Login user - sends OTP to email
+   * @param {string} identifier - Username or email
    * @param {string} password - Password
+   * @returns {Promise<Object>} - OTP sent response
+   */
+  async login(identifier, password) {
+    return this.apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, password }),
+    });
+  }
+
+  /**
+   * Verify OTP for login
+   * @param {string} identifier - Username or email used for login
+   * @param {string} otp - OTP code
    * @returns {Promise<Object>} - Login response with token
    */
-  async login(email, password) {
-    const response = await this.apiRequest('/auth/login', {
+  async verifyOtp(identifier, otp) {
+    const response = await this.apiRequest('/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, otp }),
     });
-    
+
     if (response.token) {
       this.setAuthToken(response.token);
     }
-    
+
     return response;
   }
 

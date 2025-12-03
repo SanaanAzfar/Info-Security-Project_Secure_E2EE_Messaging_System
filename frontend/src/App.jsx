@@ -8,12 +8,14 @@ import { useAuth, useKeys } from './hooks/useAuth.js';
 import { useMessaging } from './hooks/useMessaging.js';
 import { LoginForm } from './components/LoginForm.jsx';
 import { RegisterForm } from './components/RegisterForm.jsx';
+import { OtpForm } from './components/OtpForm.jsx';
 import { ChatInterface } from './components/ChatInterface.jsx';
 import './App.css';
 
 function App() {
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
-  const { user, isAuthenticated, isLoading, error, contacts, register, login, logout, addContact, clearError } = useAuth();
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register' | 'otp'
+  const [otpData, setOtpData] = useState(null); // { identifier, password }
+  const { user, isAuthenticated, isLoading, error, contacts, register, login, verifyOtp, logout, addContact, clearError } = useAuth();
   const { keys, loadKeys, clearKeys } = useKeys();
   
   console.log('App component render:', {
@@ -58,8 +60,13 @@ function App() {
     console.log('handleLogin called');
     const loginResult = await login(email, password);
     console.log('Login result:', loginResult);
-    
-    if (loginResult.success && loginResult.user) {
+
+    if (loginResult.success && loginResult.requiresOtp) {
+      // Switch to OTP mode
+      setAuthMode('otp');
+      setOtpData({ identifier: loginResult.identifier, password });
+      return true;
+    } else if (loginResult.success && loginResult.user) {
       // Load user keys after successful login using the returned user data
       console.log('Loading keys for user:', loginResult.user.id);
       const keysLoaded = await loadKeys(loginResult.user.id, password);
@@ -70,6 +77,28 @@ function App() {
     return false;
   };
 
+  const handleVerifyOtp = async (identifier, otp) => {
+    console.log('handleVerifyOtp called');
+    const verifyResult = await verifyOtp(identifier, otp, otpData.password);
+    console.log('Verify OTP result:', verifyResult);
+
+    if (verifyResult.success && verifyResult.user) {
+      // Load user keys after successful OTP verification
+      console.log('Loading keys for user:', verifyResult.user.id);
+      const keysLoaded = await loadKeys(verifyResult.user.id, otpData.password);
+      console.log('Keys loaded result:', keysLoaded);
+      console.log('Keys state after loading:', keys);
+      setOtpData(null); // Clear OTP data
+      return true;
+    }
+    return false;
+  };
+
+  const handleBackToLogin = () => {
+    setAuthMode('login');
+    setOtpData(null);
+  };
+
   const handleRegister = async (userData) => {
     return await register(userData);
   };
@@ -77,6 +106,8 @@ function App() {
   const handleLogout = async () => {
     await logout();
     clearKeys();
+    setAuthMode('login');
+    setOtpData(null);
   };
 
   const handleSendMessage = async (receiverId, message) => {
@@ -161,12 +192,20 @@ function App() {
           isLoading={isLoading}
           error={error}
         />
-      ) : (
+      ) : authMode === 'register' ? (
         <RegisterForm
           onRegister={handleRegister}
           onSwitchToLogin={() => setAuthMode('login')}
           isLoading={isLoading}
           error={error}
+        />
+      ) : (
+        <OtpForm
+          onVerifyOtp={handleVerifyOtp}
+          onBackToLogin={handleBackToLogin}
+          isLoading={isLoading}
+          error={error}
+          identifier={otpData?.identifier}
         />
       )}
     </div>

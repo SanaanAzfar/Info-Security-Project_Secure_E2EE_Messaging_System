@@ -3,15 +3,16 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
+const Contact = require('../models/Contact');
 const { authenticateToken } = require('../middleware/auth');
 const { sendOTPEmail } = require('../utils/emailService');
 
 exports.register = async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, email, password, publicKey } = req.body;
 
-        if (!username || !email || !password) {
-            return res.status(400).json({ error: 'Username, email, and password are required' });
+        if (!username || !email || !password || !publicKey) {
+            return res.status(400).json({ error: 'Username, email, password, and publicKey are required' });
         }
 
         if (username.length < 3 || username.length > 50) {
@@ -27,10 +28,22 @@ exports.register = async (req, res) => {
             return res.status(400).json({ error: 'User already exists' });
         }
 
-        const user = new User({ username, email, password });
+        const user = new User({ username, email, password, publicKey });
         await user.save();
 
-        res.status(201).json({ message: 'User registered successfully' });
+        const token = jwt.sign({ id: user._id, username: user.username, email: user.email }, process.env.JWT_SECRET, { expiresIn: '24h' });
+
+        res.status(201).json({
+            success: true,
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                publicKey: user.publicKey,
+                createdAt: user.createdAt
+            }
+        });
     } catch (error) {
         console.error('Registration error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -93,13 +106,29 @@ exports.verifyOtp = async (req, res) => {
 
         const token = jwt.sign({ id: user._id, username: user.username, email: user.email }, process.env.JWT_SECRET, { expiresIn: '24h' });
 
+        // Get user's contacts
+        const contacts = await Contact.find({ userId: user._id })
+            .populate('contactUserId', 'username email publicKey')
+            .select('contactUserId addedAt');
+
+        const formattedContacts = contacts.map(contact => ({
+            id: contact.contactUserId._id,
+            username: contact.contactUserId.username,
+            email: contact.contactUserId.email,
+            publicKey: contact.contactUserId.publicKey,
+            addedAt: contact.addedAt
+        }));
+
         res.json({
+            success: true,
             token,
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
-            }
+                email: user.email,
+                publicKey: user.publicKey
+            },
+            contacts: formattedContacts
         });
     } catch (error) {
         console.error('OTP verification error:', error);

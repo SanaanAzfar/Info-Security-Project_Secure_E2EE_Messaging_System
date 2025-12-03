@@ -22,6 +22,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     minlength: 6
   },
+  publicKey: {
+    type: String,
+    required: true
+  },
   otp: {
     type: String,
     default: null
