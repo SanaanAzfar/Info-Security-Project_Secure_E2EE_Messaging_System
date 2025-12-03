@@ -106,6 +106,8 @@ function App() {
   const handleLogout = async () => {
     await logout();
     clearKeys();
+    setAuthMode('login');
+    setOtpData(null);
   };
 
   const handleSendMessage = async (receiverId, message) => {
