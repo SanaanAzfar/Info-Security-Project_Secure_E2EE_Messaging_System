@@ -22,6 +22,27 @@ export function generateIV() {
 }
 
 /**
+ * Generate a deterministic IV for AES-GCM encryption using IV seed and counter
+ * This ensures IV uniqueness for the same session
+ * @param {Uint8Array} ivSeed - The IV seed from key derivation
+ * @param {number} counter - The message counter
+ * @returns {Promise<Uint8Array>} - 12-byte IV for GCM mode
+ */
+export async function generateDeterministicIV(ivSeed, counter) {
+  try {
+    // Combine IV seed with message counter to create unique IV
+    const combined = new Uint8Array([...ivSeed, ...new Uint8Array(new Uint32Array([counter]).buffer)]);
+
+    // Hash the combination to get a 12-byte IV (as required by AES-GCM)
+    const hashBuffer = await window.crypto.subtle.digest("SHA-256", combined);
+    return new Uint8Array(hashBuffer.slice(0, 12));  // 12 bytes for AES-GCM
+  } catch (error) {
+    console.error('IV generation failed:', error);
+    throw new Error('IV generation failed');
+  }
+}
+
+/**
  * Encrypt a message using AES-256-GCM
  * @param {string} message - Plain text message to encrypt
  * @param {CryptoKey} key - AES-256-GCM encryption key
@@ -32,7 +53,7 @@ export async function encryptMessage(message, key, iv) {
   try {
     const encoder = new TextEncoder();
     const data = encoder.encode(message);
-    
+
     const encrypted = await window.crypto.subtle.encrypt(
       {
         name: 'AES-GCM',
@@ -95,16 +116,26 @@ export async function decryptMessage(ciphertext, authTag, key, iv) {
  * @param {string} receiverId - Receiver user ID
  * @param {CryptoKey} sessionKey - Shared session key for encryption
  * @param {number} sequenceNumber - Message sequence number for replay protection
+ * @param {Object} sessionMetadata - Additional session metadata (e.g., from SKEP)
  * @returns {Promise<Object>} - Complete encrypted message object
  */
-export async function createEncryptedMessage(message, senderId, receiverId, sessionKey, sequenceNumber) {
+export async function createEncryptedMessage(message, senderId, receiverId, sessionKey, sequenceNumber, sessionMetadata = null) {
   try {
     const timestamp = Date.now();
     const nonce = generateNonce();
-    const iv = generateIV();
-    
+
+    // Use deterministic IV if session metadata is available (from SKEP)
+    let iv;
+    if (sessionMetadata && sessionMetadata.ivSeed && typeof sessionMetadata.messageCount === 'number') {
+      iv = await generateDeterministicIV(sessionMetadata.ivSeed, sessionMetadata.messageCount);
+      // Increment message count for next message
+      sessionMetadata.messageCount++;
+    } else {
+      iv = generateIV();
+    }
+
     const { ciphertext, authTag } = await encryptMessage(message, sessionKey, iv);
-    
+
     return {
       senderId,
       receiverId,
