@@ -259,10 +259,19 @@ class ApiService {
    * @param {string} userId - Other user's ID
    * @param {number} limit - Number of messages to retrieve
    * @param {number} offset - Offset for pagination
+   * @param {string} before - Message ID to get messages before
    * @returns {Promise<Array>} - Array of message objects
    */
-  async getMessages(userId, limit = 50, offset = 0) {
-    return this.apiRequest(`/messages/${userId}?limit=${limit}&offset=${offset}`);
+  async getMessages(userId, limit = 50, offset = 0, before = null) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString()
+    });
+    if (before) {
+      params.append('before', before);
+    }
+    const response = await this.apiRequest(`/messages/${userId}?${params.toString()}`);
+    return response.messages || [];
   }
 
   /**
