@@ -1,0 +1,271 @@
+.contact-manager {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.contact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.contact-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.add-contact-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background-color: #007acc;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.add-contact-btn:hover {
+  background-color: #005a99;
+  transform: scale(1.1);
+}
+
+.add-contact-form {
+  margin-bottom: 12px;
+}
+
+.input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.input-hint {
+  padding: 0 4px;
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.input-type {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.input-type.email {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+
+.input-type.username {
+  background-color: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.username-input,
+.contact-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.username-input:focus,
+.contact-input:focus {
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+.add-btn {
+  padding: 8px 16px;
+  background-color: #007acc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.add-btn:hover:not(:disabled) {
+  background-color: #005a99;
+}
+
+.add-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.message {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.message.error {
+  background-color: #ffebee;
+  color: #c62828;
+  border: 1px solid #ffcdd2;
+}
+
+.message.success {
+  background-color: #e8f5e8;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  margin-left: 8px;
+}
+
+.contacts-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.no-contacts {
+  text-align: center;
+  color: #666;
+  padding: 20px;
+}
+
+.no-contacts p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.no-contacts small {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.contact-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.contact-item:hover {
+  background-color: #f5f5f5;
+}
+
+.contact-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #007acc;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.contact-info {
+  flex: 1;
+}
+
+.contact-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.contact-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.online {
+  background-color: #4caf50;
+}
+
+.status-dot.offline {
+  background-color: #999;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .contact-manager {
+    border-bottom-color: #333;
+  }
+  
+  .contact-header h3 {
+    color: #fff;
+  }
+  
+  .username-input,
+  .contact-input {
+    background-color: #333;
+    border-color: #555;
+    color: #fff;
+  }
+  
+  .username-input:focus,
+  .contact-input:focus {
+    border-color: #0078d4;
+  }
+  
+  .contact-item:hover {
+    background-color: #2d2d2d;
+  }
+  
+  .contact-name {
+    color: #fff;
+  }
+  
+  .contact-status {
+    color: #ccc;
+  }
+  
+  .no-contacts {
+    color: #ccc;
+  }
+  
+  .input-type.email {
+    background-color: #1e3a8a;
+    color: #bfdbfe;
+  }
+  
+  .input-type.username {
+    background-color: #581c87;
+    color: #e9d5ff;
+  }
+}
