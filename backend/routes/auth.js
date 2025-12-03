@@ -4,7 +4,7 @@ const { register, login, verifyOtp } = require('../controllers/authController');
 
 /**
  * @swagger
- * /register:
+ * /auth/register:
  *   post:
  *     summary: Register a new user
  *     tags: [Authentication]
@@ -41,7 +41,7 @@ router.post('/register', register);
 
 /**
  * @swagger
- * /login:
+ * /auth/login:
  *   post:
  *     summary: Login using username or email and password
  *     tags: [Authentication]
@@ -87,7 +87,7 @@ router.post('/login', login);
 
 /**
  * @swagger
- * /verify-otp:
+ * /auth/verify-otp:
  *   post:
  *     summary: Verify OTP for 2FA
  *     tags: [Authentication]
