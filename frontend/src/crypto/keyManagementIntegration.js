@@ -1,144 +1,18 @@
 /**
  * Key Management Integration for Frontend
- * Integrates the Key Generation & Secure Key Storage module into the frontend
+ * Integrates secure key storage with password-based encryption for private keys
  */
 
-// Import the key management modules from the Cryp directory
-// Since these are not in the same directory, we'll need to reference them appropriately
-// For now, we'll implement this as a standalone module that can be imported
-
-class FrontendKeyManager {
-  constructor() {
-    // Initialize the key management system
-    this.keyManagement = null;
-    this.isInitialized = false;
-  }
-
-  /**
-   * Initializes the key management system
-   * @param {string} userId - The current user's ID
-   * @returns {Promise<void>}
-   */
-  async initialize(userId) {
-    if (typeof window !== 'undefined' && window.KeyManagement) {
-      this.keyManagement = new window.KeyManagement();
-      this.isInitialized = true;
-    } else {
-      // If window.KeyManagement is not available, we'll need to implement a fallback
-      // or wait for the modules to be loaded
-      throw new Error('KeyManagement module not available in the browser scope');
-    }
-  }
-
-  /**
-   * Generates and stores a new key pair for the user
-   * @param {string} userId - The user's ID
-   * @returns {Promise<Object>} The generated key pair
-   */
-  async generateAndStoreKeys(userId) {
-    if (!this.isInitialized) {
-      await this.initialize(userId);
-    }
-
-    return await this.keyManagement.generateAndStoreKeyPair(userId);
-  }
-
-  /**
-   * Retrieves the user's key pair from storage
-   * @param {string} userId - The user's ID
-   * @returns {Promise<Object>} The stored key pair
-   */
-  async retrieveKeys(userId) {
-    if (!this.isInitialized) {
-      await this.initialize(userId);
-    }
-
-    return await this.keyManagement.retrieveKeyPair(userId);
-  }
-
-  /**
-   * Checks if keys exist for the user
-   * @param {string} userId - The user's ID
-   * @returns {Promise<boolean>} Whether keys exist for the user
-   */
-  async hasKeysStored(userId) {
-    if (!this.isInitialized) {
-      await this.initialize(userId);
-    }
-
-    return await this.keyManagement.hasKeysStored(userId);
-  }
-
-  /**
-   * Removes keys for a user
-   * @param {string} userId - The user's ID
-   * @returns {Promise<void>}
-   */
-  async removeKeys(userId) {
-    if (!this.isInitialized) {
-      await this.initialize(userId);
-    }
-
-    return await this.keyManagement.removeKeys(userId);
-  }
-
-  /**
-   * Gets a user's public key for sharing
-   * @param {string} userId - The user's ID
-   * @returns {Promise<CryptoKey>} The public key
-   */
-  async getUserPublicKey(userId) {
-    if (!this.isInitialized) {
-      await this.initialize(userId);
-    }
-
-    return await this.keyManagement.getUserPublicKey(userId);
-  }
-
-  /**
-   * Exports a key for transmission
-   * @param {CryptoKey} key - The key to export
-   * @param {string} keyType - 'public' or 'private'
-   * @returns {Promise<string>} The exported key string
-   */
-  async exportKeyForTransmission(key, keyType) {
-    if (!this.isInitialized) {
-      await this.initialize('temp');
-    }
-
-    return await this.keyManagement.exportKeyForTransmission(key, keyType);
-  }
-
-  /**
-   * Imports a key from transmission
-   * @param {string} serializedKey - The serialized key string
-   * @param {string} keyType - 'public' or 'private'
-   * @param {Array<string>} keyUsages - The key usages
-   * @returns {Promise<CryptoKey>} The imported key
-   */
-  async importKeyFromTransmission(serializedKey, keyType, keyUsages) {
-    if (!this.isInitialized) {
-      await this.initialize('temp');
-    }
-
-    return await this.keyManagement.importKeyFromTransmission(serializedKey, keyType, keyUsages);
-  }
-}
-
-// If we want to create a simplified version that directly uses the Web Crypto API
-// based on the requirements in the project, here's a streamlined implementation
-// that's more appropriate for the frontend:
+// Import the existing key storage utilities
+import { storePrivateKey, retrievePrivateKey } from './keyStorage.js';
 
 /**
- * Simplified Key Management for Frontend
- * Implements RSA key pair generation and secure storage
+ * Simplified Key Management for Frontend with Secure Storage
+ * Implements RSA key pair generation and secure storage with password-based encryption
  */
 export class SimplifiedKeyManager {
   constructor() {
     this.keySize = 2048; // Minimum 2048 bits as per requirements
-    this.indexedDBName = 'SecureKeyStorage';
-    this.indexedDBVersion = 1;
-    this.objectStoreName = 'privateKeys';
   }
 
   /**
@@ -168,117 +42,34 @@ export class SimplifiedKeyManager {
   }
 
   /**
-   * Opens the IndexedDB database for private key storage
-   * @returns {Promise<IDBDatabase>} The opened database
-   */
-  async openDB() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.indexedDBName, this.indexedDBVersion);
-
-      request.onerror = () => {
-        reject(new Error(`Database error: ${request.error}`));
-      };
-
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        
-        // Create an object store for private keys if it doesn't exist
-        if (!db.objectStoreNames.contains(this.objectStoreName)) {
-          const objectStore = db.createObjectStore(this.objectStoreName, { keyPath: 'userId' });
-          // Add an index for searching by userId
-          objectStore.createIndex('userId', 'userId', { unique: true });
-        }
-      };
-    });
-  }
-
-  /**
-   * Stores a private key in IndexedDB
+   * Stores a private key in IndexedDB with password-based encryption
    * @param {string} userId - The user identifier
    * @param {CryptoKey} privateKey - The private key to store
+   * @param {string} password - The user's password for encryption
    * @returns {Promise<void>}
    */
-  async storePrivateKey(userId, privateKey) {
+  async storePrivateKey(userId, privateKey, password) {
     try {
-      const db = await this.openDB();
-      
-      // Export the private key to JWK format to store it
-      const exportedPrivateKey = await window.crypto.subtle.exportKey('jwk', privateKey);
-      
-      // Create a transaction
-      const transaction = db.transaction([this.objectStoreName], 'readwrite');
-      const objectStore = transaction.objectStore(this.objectStoreName);
-      
-      // Store the key with the userId as key
-      const data = {
-        userId: userId,
-        privateKey: exportedPrivateKey,
-        timestamp: new Date().toISOString()
-      };
-      
-      const request = objectStore.put(data);
-      
-      return new Promise((resolve, reject) => {
-        request.onsuccess = () => {
-          resolve();
-        };
-        
-        request.onerror = () => {
-          reject(new Error(`Failed to store private key: ${request.error}`));
-        };
-      });
+      // Use the existing keyStorage utility which handles password-based encryption
+      await storePrivateKey(userId, privateKey, password);
     } catch (error) {
       throw new Error(`Error storing private key: ${error.message}`);
     }
   }
 
   /**
-   * Retrieves a private key from IndexedDB
+   * Retrieves and decrypts a private key from IndexedDB
    * @param {string} userId - The user identifier
+   * @param {string} password - The user's password for decryption
    * @returns {Promise<CryptoKey|null>} The retrieved private key or null if not found
    */
-  async retrievePrivateKey(userId) {
+  async retrievePrivateKey(userId, password) {
     try {
-      const db = await this.openDB();
-      
-      // Create a transaction
-      const transaction = db.transaction([this.objectStoreName], 'readonly');
-      const objectStore = transaction.objectStore(this.objectStoreName);
-      
-      // Get the stored key data
-      const request = objectStore.get(userId);
-      
-      return new Promise((resolve, reject) => {
-        request.onsuccess = async () => {
-          const result = request.result;
-          if (result && result.privateKey) {
-            // Import the stored private key back to CryptoKey format
-            const privateKey = await window.crypto.subtle.importKey(
-              'jwk',
-              result.privateKey,
-              {
-                name: 'RSA-OAEP',
-                hash: { name: "SHA-256" }
-              },
-              true, // extractable
-              ['decrypt'] // appropriate key usages
-            );
-            resolve(privateKey);
-          } else {
-            resolve(null);
-          }
-        };
-        
-        request.onerror = () => {
-          reject(new Error(`Failed to retrieve private key: ${request.error}`));
-        };
-      });
+      // Use the existing keyStorage utility which handles password-based decryption
+      return await retrievePrivateKey(userId, password);
     } catch (error) {
-      throw new Error(`Error retrieving private key: ${error.message}`);
+      console.error('Error retrieving private key:', error);
+      return null; // Return null on error rather than throwing to maintain compatibility
     }
   }
 
@@ -292,10 +83,10 @@ export class SimplifiedKeyManager {
     try {
       // Export the public key to JWK format to store it
       const exportedPublicKey = await window.crypto.subtle.exportKey('jwk', publicKey);
-      
+
       // Convert the key to JSON string for storage
       const keyData = JSON.stringify(exportedPublicKey);
-      
+
       // Store in localStorage with a unique key
       const storageKey = 'publicKey_' + userId;
       localStorage.setItem(storageKey, keyData);
@@ -314,14 +105,14 @@ export class SimplifiedKeyManager {
       // Get the stored key data
       const storageKey = 'publicKey_' + userId;
       const keyData = localStorage.getItem(storageKey);
-      
+
       if (!keyData) {
         return null;
       }
-      
+
       // Parse the stored JSON
       const exportedPublicKey = JSON.parse(keyData);
-      
+
       // Import the stored public key back to CryptoKey format
       const publicKey = await window.crypto.subtle.importKey(
         'jwk',
@@ -333,7 +124,7 @@ export class SimplifiedKeyManager {
         true, // extractable
         ['encrypt'] // appropriate key usages
       );
-      
+
       return publicKey;
     } catch (error) {
       throw new Error(`Error retrieving public key: ${error.message}`);
@@ -343,15 +134,16 @@ export class SimplifiedKeyManager {
   /**
    * Generates and stores keys for a user
    * @param {string} userId - The user identifier
+   * @param {string} password - The user's password for encrypting private key
    * @returns {Promise<Object>} Object containing the generated keys
    */
-  async generateAndStoreKeys(userId) {
+  async generateAndStoreKeys(userId, password) {
     try {
       // Generate a new key pair
       const { publicKey, privateKey } = await this.generateKeyPair();
 
-      // Store the private key securely in IndexedDB
-      await this.storePrivateKey(userId, privateKey);
+      // Store the private key securely in IndexedDB with password encryption
+      await this.storePrivateKey(userId, privateKey, password);
 
       // Store the public key in localStorage
       await this.storePublicKey(userId, publicKey);
@@ -368,11 +160,12 @@ export class SimplifiedKeyManager {
   /**
    * Retrieves both public and private keys for a user
    * @param {string} userId - The user identifier
+   * @param {string} password - The user's password for decrypting private key
    * @returns {Promise<Object>} Object containing both keys
    */
-  async retrieveKeys(userId) {
+  async retrieveKeys(userId, password) {
     try {
-      const privateKey = await this.retrievePrivateKey(userId);
+      const privateKey = await this.retrievePrivateKey(userId, password);
       const publicKey = await this.retrievePublicKey(userId);
 
       return {
@@ -391,10 +184,11 @@ export class SimplifiedKeyManager {
    */
   async hasKeysStored(userId) {
     try {
-      const privateKey = await this.retrievePrivateKey(userId);
-      const publicKey = await this.retrievePublicKey(userId);
-
-      return !!(privateKey && publicKey);
+      // Check if public key exists (since we store public keys in localStorage)
+      const publicKey = this.retrievePublicKey(userId);
+      // We can't check if private key exists without the password,
+      // so just check for public key existence
+      return !!publicKey;
     } catch {
       return false;
     }
@@ -403,8 +197,3 @@ export class SimplifiedKeyManager {
 
 // Create a single instance for export
 export const keyManager = new SimplifiedKeyManager();
-
-// For compatibility with the original KeyManagement module, if it's available
-export const frontendKeyManager = typeof window !== 'undefined' && window.KeyManagement ? 
-  new FrontendKeyManager() : 
-  null;

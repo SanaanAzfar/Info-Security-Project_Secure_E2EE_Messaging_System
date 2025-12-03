@@ -54,7 +54,7 @@ export function useAuth() {
       const { email, username, password } = userData;
 
       // Generate RSA 2048-bit key pair for encryption as required by project
-      const { publicKey, privateKey } = await keyManager.generateAndStoreKeys(`${email}_rsa`);
+      const { publicKey, privateKey } = await keyManager.generateAndStoreKeys(`${email}_rsa`, password);
 
       // Export public key for backend storage
       const exportedPublicKey = await window.crypto.subtle.exportKey('jwk', publicKey);
@@ -141,7 +141,7 @@ export function useAuth() {
         console.log('OTP verification successful, checking keys...');
 
         // Verify that user's private keys can be retrieved
-        const rsaPrivateKey = await keyManager.retrievePrivateKey(`${identifier}_rsa`);
+        const rsaPrivateKey = await keyManager.retrievePrivateKey(`${identifier}_rsa`, password);
 
         if (!rsaPrivateKey) {
           throw new Error('Unable to retrieve your private keys. Please contact support.');
@@ -270,16 +270,17 @@ export function useKeys() {
   /**
    * Load user's private keys from storage
    * @param {string} userId - User ID (email)
+   * @param {string} password - User password for key decryption
    * @returns {Promise<boolean>} - Success status
    */
-  const loadKeys = useCallback(async (userId) => {
+  const loadKeys = useCallback(async (userId, password) => {
     console.log('loadKeys called with:', { userId });
     try {
       setIsLoading(true);
       setError(null);
 
       console.log('Attempting to retrieve RSA keys...');
-      const { publicKey, privateKey } = await keyManager.retrieveKeys(`${userId}_rsa`);
+      const { publicKey, privateKey } = await keyManager.retrieveKeys(`${userId}_rsa`, password);
 
       console.log('Retrieved RSA keys:', {
         hasRsaPrivate: !!privateKey,
@@ -311,15 +312,16 @@ export function useKeys() {
   /**
    * Generate new key pairs (for key rotation)
    * @param {string} userId - User ID (email)
+   * @param {string} password - User password for key encryption
    * @returns {Promise<boolean>} - Success status
    */
-  const regenerateKeys = useCallback(async (userId) => {
+  const regenerateKeys = useCallback(async (userId, password) => {
     try {
       setIsLoading(true);
       setError(null);
 
       // Generate new RSA 2048-bit key pairs
-      const { publicKey, privateKey } = await keyManager.generateAndStoreKeys(`${userId}_rsa`);
+      const { publicKey, privateKey } = await keyManager.generateAndStoreKeys(`${userId}_rsa`, password);
 
       // Export new public key for backend update
       const exportedPublicKey = await window.crypto.subtle.exportKey('jwk', publicKey);
