@@ -2,6 +2,11 @@ const request = require('supertest');
 const app = require('../app');
 const User = require('../models/User');
 
+// Mock the email service
+jest.mock('../utils/emailService', () => ({
+  sendOTPEmail: jest.fn(),
+}));
+
 describe('Authentication Integration Tests', () => {
   describe('POST /register', () => {
     it('should register a new user successfully', async () => {
@@ -95,7 +100,7 @@ describe('Authentication Integration Tests', () => {
       await User.create(userData);
     });
 
-    it('should login successfully with username', async () => {
+    it('should send OTP successfully with username', async () => {
       const loginData = {
         identifier: 'testuser',
         password: 'password123'
@@ -106,14 +111,15 @@ describe('Authentication Integration Tests', () => {
         .send(loginData)
         .expect(200);
 
-      expect(response.body).toHaveProperty('token');
-      expect(response.body).toHaveProperty('user');
-      expect(response.body.user).toHaveProperty('id');
-      expect(response.body.user).toHaveProperty('username', 'testuser');
-      expect(response.body.user).toHaveProperty('email', 'test@example.com');
+      expect(response.body).toHaveProperty('message', 'OTP sent to your email');
+
+      // Verify OTP was set in database
+      const user = await User.findOne({ username: 'testuser' }).select('+otp +otpExpires');
+      expect(user).toHaveProperty('otp');
+      expect(user).toHaveProperty('otpExpires');
     });
 
-    it('should login successfully with email', async () => {
+    it('should send OTP successfully with email', async () => {
       const loginData = {
         identifier: 'test@example.com',
         password: 'password123'
@@ -124,10 +130,12 @@ describe('Authentication Integration Tests', () => {
         .send(loginData)
         .expect(200);
 
-      expect(response.body).toHaveProperty('token');
-      expect(response.body).toHaveProperty('user');
-      expect(response.body.user).toHaveProperty('username', 'testuser');
-      expect(response.body.user).toHaveProperty('email', 'test@example.com');
+      expect(response.body).toHaveProperty('message', 'OTP sent to your email');
+
+      // Verify OTP was set in database
+      const user = await User.findOne({ email: 'test@example.com' }).select('+otp +otpExpires');
+      expect(user).toHaveProperty('otp');
+      expect(user).toHaveProperty('otpExpires');
     });
 
     it('should return 401 for invalid credentials', async () => {
@@ -165,6 +173,97 @@ describe('Authentication Integration Tests', () => {
         .expect(400);
 
       expect(response.body).toHaveProperty('error', 'Identifier and password are required');
+    });
+  });
+
+  describe('POST /verify-otp', () => {
+    let otp;
+
+    beforeEach(async () => {
+      // Create a test user and simulate login to get OTP
+      const userData = {
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'password123'
+      };
+      await User.create(userData);
+
+      // Simulate login to set OTP
+      const loginData = {
+        identifier: 'testuser',
+        password: 'password123'
+      };
+      await request(app)
+        .post('/auth/login')
+        .send(loginData);
+
+      // Get the OTP from database
+      const user = await User.findOne({ username: 'testuser' });
+      otp = user.otp;
+    });
+
+    it('should verify OTP successfully', async () => {
+      const verifyData = {
+        identifier: 'testuser',
+        otp: otp
+      };
+
+      const response = await request(app)
+        .post('/auth/verify-otp')
+        .send(verifyData)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('token');
+      expect(response.body).toHaveProperty('user');
+      expect(response.body.user).toHaveProperty('username', 'testuser');
+      expect(response.body.user).toHaveProperty('email', 'test@example.com');
+
+      // Verify OTP was cleared
+      const user = await User.findOne({ username: 'testuser' }).select('+otp +otpExpires');
+      expect(user.otp).toBeNull();
+      expect(user.otpExpires).toBeNull();
+    });
+
+    it('should return 401 for invalid OTP', async () => {
+      const verifyData = {
+        identifier: 'testuser',
+        otp: '123456'
+      };
+
+      const response = await request(app)
+        .post('/auth/verify-otp')
+        .send(verifyData)
+        .expect(401);
+
+      expect(response.body).toHaveProperty('error', 'Invalid or expired OTP');
+    });
+
+    it('should return 401 for expired OTP', async () => {
+      // Expire the OTP
+      const user = await User.findOne({ username: 'testuser' }).select('+otp +otpExpires');
+      user.otpExpires = new Date(Date.now() - 1000); // Set to past
+      await user.save();
+
+      const verifyData = {
+        identifier: 'testuser',
+        otp: otp
+      };
+
+      const response = await request(app)
+        .post('/auth/verify-otp')
+        .send(verifyData)
+        .expect(401);
+
+      expect(response.body).toHaveProperty('error', 'Invalid or expired OTP');
+    });
+
+    it('should return 400 for missing fields', async () => {
+      const response = await request(app)
+        .post('/auth/verify-otp')
+        .send({ identifier: 'testuser' })
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error', 'Identifier and OTP are required');
     });
   });
 });
