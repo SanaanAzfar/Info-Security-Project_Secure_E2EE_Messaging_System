@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 require('dotenv').config();
+
+let mongoServer;
 
 // Setup before all tests
 beforeAll(async () => {
@@ -8,7 +11,10 @@ beforeAll(async () => {
     await mongoose.disconnect();
   }
 
-  await mongoose.connect(process.env.MONGODB_URI);
+  // Start in-memory MongoDB server
+  mongoServer = await MongoMemoryServer.create();
+  const mongoUri = mongoServer.getUri();
+  await mongoose.connect(mongoUri);
 }, 30000); // Increase timeout to 30 seconds
 
 // Cleanup after each test
@@ -24,4 +30,5 @@ afterEach(async () => {
 afterAll(async () => {
   await mongoose.connection.dropDatabase();
   await mongoose.connection.close();
+  await mongoServer.stop();
 });
