@@ -1,13 +1,13 @@
 /**
  * Custom React hooks for authentication and user management
  * Handles login, registration, and key generation workflow
+ * Uses RSA 2048-bit keys as required by project specifications
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api.js';
-import { generateECCKeyPair, exportPublicKey, arrayBufferToBase64 } from '../crypto/ecc.js';
-import { generateSigningKeyPair } from '../crypto/keyExchange.js';
-import { storePrivateKey, retrievePrivateKey, storePublicKey, retrievePublicKey, deleteUserKeys } from '../crypto/keyStorage.js';
+import { keyManager } from '../crypto/keyManagementIntegration.js';
+import { arrayBufferToBase64, base64ToArrayBuffer } from '../crypto/encryption.js';
 
 /**
  * Authentication hook for login, registration, and logout
@@ -42,7 +42,7 @@ export function useAuth() {
   }, []);
 
   /**
-   * Register a new user with key generation
+   * Register a new user with RSA 2048-bit key generation
    * @param {Object} userData - User registration data
    * @returns {Promise<boolean>} - Success status
    */
@@ -53,20 +53,13 @@ export function useAuth() {
 
       const { email, username, password } = userData;
 
-      // Generate ECC key pair for ECDH
-      const eccKeyPair = await generateECCKeyPair();
-      
-      // Generate signing key pair for message authentication
-      const signingKeyPair = await generateSigningKeyPair();
+      // Generate RSA 2048-bit key pair for encryption as required by project
+      const { publicKey, privateKey } = await keyManager.generateAndStoreKeys(`${email}_rsa`);
 
-      // Export public keys for backend storage
-      const eccPublicKeyData = await exportPublicKey(eccKeyPair.publicKey);
-      const signingPublicKeyData = await exportPublicKey(signingKeyPair.publicKey);
-
-      // Combine public keys for backend
+      // Export public key for backend storage
+      const exportedPublicKey = await window.crypto.subtle.exportKey('jwk', publicKey);
       const publicKeyBundle = {
-        ecc: arrayBufferToBase64(eccPublicKeyData),
-        signing: arrayBufferToBase64(signingPublicKeyData),
+        rsa: JSON.stringify(exportedPublicKey),
         timestamp: Date.now()
       };
 
@@ -79,13 +72,11 @@ export function useAuth() {
       );
 
       if (response.success) {
-        // Store private keys locally after successful registration
-        await Promise.all([
-          storePrivateKey(`${response.user.id}_ecc`, eccKeyPair.privateKey, password),
-          storePrivateKey(`${response.user.id}_signing`, signingKeyPair.privateKey, password),
-          storePublicKey(`${response.user.id}_ecc`, eccKeyPair.publicKey),
-          storePublicKey(`${response.user.id}_signing`, signingKeyPair.publicKey)
-        ]);
+        // Store user information for later retrieval
+        localStorage.setItem('currentUser', JSON.stringify({
+          id: response.user.id,
+          email: email
+        }));
 
         return true;
       }
@@ -150,11 +141,10 @@ export function useAuth() {
         console.log('OTP verification successful, checking keys...');
 
         // Verify that user's private keys can be retrieved
-        const eccPrivateKey = await retrievePrivateKey(`${response.user.id}_ecc`, password);
-        const signingPrivateKey = await retrievePrivateKey(`${response.user.id}_signing`, password);
+        const rsaPrivateKey = await keyManager.retrievePrivateKey(`${identifier}_rsa`);
 
-        if (!eccPrivateKey || !signingPrivateKey) {
-          throw new Error('Unable to decrypt your private keys. Please check your password.');
+        if (!rsaPrivateKey) {
+          throw new Error('Unable to retrieve your private keys. Please contact support.');
         }
 
         console.log('Keys verified successfully');
@@ -183,15 +173,13 @@ export function useAuth() {
   const logout = useCallback(async () => {
     try {
       setIsLoading(true);
-      
-      // Clear keys from local storage
-      if (user) {
-        await deleteUserKeys(user.id);
-      }
-      
+
+      // Clear user information from local storage
+      localStorage.removeItem('currentUser');
+
       // Logout from backend
       await apiService.logout();
-      
+
       setUser(null);
       setContacts([]);
       setIsAuthenticated(false);
@@ -201,7 +189,7 @@ export function useAuth() {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, []);
 
   /**
    * Add a new contact
@@ -239,53 +227,41 @@ export function useAuth() {
  */
 export function useKeys() {
   const [keys, setKeys] = useState({
-    eccPrivate: null,
-    signingPrivate: null,
-    eccPublic: null,
-    signingPublic: null
+    rsaPrivate: null,
+    rsaPublic: null
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   /**
    * Load user's private keys from storage
-   * @param {string} userId - User ID
-   * @param {string} password - User password for decryption
+   * @param {string} userId - User ID (email)
    * @returns {Promise<boolean>} - Success status
    */
-  const loadKeys = useCallback(async (userId, password) => {
-    console.log('loadKeys called with:', { userId, hasPassword: !!password });
+  const loadKeys = useCallback(async (userId) => {
+    console.log('loadKeys called with:', { userId });
     try {
       setIsLoading(true);
       setError(null);
 
-      console.log('Attempting to retrieve keys...');
-      const [eccPrivateKey, signingPrivateKey, eccPublicKey, signingPublicKey] = await Promise.all([
-        retrievePrivateKey(`${userId}_ecc`, password),
-        retrievePrivateKey(`${userId}_signing`, password),
-        retrievePublicKey(`${userId}_ecc`),
-        retrievePublicKey(`${userId}_signing`)
-      ]);
+      console.log('Attempting to retrieve RSA keys...');
+      const { publicKey, privateKey } = await keyManager.retrieveKeys(`${userId}_rsa`);
 
-      console.log('Retrieved keys:', {
-        hasEccPrivate: !!eccPrivateKey,
-        hasSigningPrivate: !!signingPrivateKey,
-        hasEccPublic: !!eccPublicKey,
-        hasSigningPublic: !!signingPublicKey
+      console.log('Retrieved RSA keys:', {
+        hasRsaPrivate: !!privateKey,
+        hasRsaPublic: !!publicKey
       });
 
-      if (!eccPrivateKey || !signingPrivateKey) {
+      if (!privateKey) {
         throw new Error('Failed to load private keys');
       }
 
       const newKeys = {
-        eccPrivate: eccPrivateKey,
-        signingPrivate: signingPrivateKey,
-        eccPublic: eccPublicKey,
-        signingPublic: signingPublicKey
+        rsaPrivate: privateKey,
+        rsaPublic: publicKey
       };
 
-      console.log('Setting keys:', newKeys);
+      console.log('Setting RSA keys:', newKeys);
       setKeys(newKeys);
 
       return true;
@@ -300,46 +276,31 @@ export function useKeys() {
 
   /**
    * Generate new key pairs (for key rotation)
-   * @param {string} userId - User ID
-   * @param {string} password - User password
+   * @param {string} userId - User ID (email)
    * @returns {Promise<boolean>} - Success status
    */
-  const regenerateKeys = useCallback(async (userId, password) => {
+  const regenerateKeys = useCallback(async (userId) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Generate new key pairs
-      const eccKeyPair = await generateECCKeyPair();
-      const signingKeyPair = await generateSigningKeyPair();
+      // Generate new RSA 2048-bit key pairs
+      const { publicKey, privateKey } = await keyManager.generateAndStoreKeys(`${userId}_rsa`);
 
-      // Export new public keys for backend update
-      const eccPublicKeyData = await exportPublicKey(eccKeyPair.publicKey);
-      const signingPublicKeyData = await exportPublicKey(signingKeyPair.publicKey);
-
+      // Export new public key for backend update
+      const exportedPublicKey = await window.crypto.subtle.exportKey('jwk', publicKey);
       const publicKeyBundle = {
-        ecc: arrayBufferToBase64(eccPublicKeyData),
-        signing: arrayBufferToBase64(signingPublicKeyData),
+        rsa: JSON.stringify(exportedPublicKey),
         timestamp: Date.now()
       };
 
-      // Update backend with new public keys
+      // Update backend with new public key
       await apiService.updatePublicKey(JSON.stringify(publicKeyBundle));
-
-      // Store new private keys locally
-      await Promise.all([
-        storePrivateKey(`${userId}_ecc`, eccKeyPair.privateKey, password),
-        storePrivateKey(`${userId}_signing`, signingKeyPair.privateKey, password),
-        storePublicKey(`${userId}_ecc`, eccKeyPair.publicKey),
-        storePublicKey(`${userId}_signing`, signingKeyPair.publicKey)
-      ]);
 
       // Update state
       setKeys({
-        eccPrivate: eccKeyPair.privateKey,
-        signingPrivate: signingKeyPair.privateKey,
-        eccPublic: eccKeyPair.publicKey,
-        signingPublic: signingKeyPair.publicKey
+        rsaPrivate: privateKey,
+        rsaPublic: publicKey
       });
 
       return true;
@@ -357,10 +318,8 @@ export function useKeys() {
    */
   const clearKeys = useCallback(() => {
     setKeys({
-      eccPrivate: null,
-      signingPrivate: null,
-      eccPublic: null,
-      signingPublic: null
+      rsaPrivate: null,
+      rsaPublic: null
     });
   }, []);
 
@@ -373,7 +332,24 @@ export function useKeys() {
     try {
       const publicKeyData = await apiService.getUserPublicKey(userId);
       if (publicKeyData) {
-        return JSON.parse(publicKeyData);
+        const parsedData = JSON.parse(publicKeyData);
+
+        // Import the RSA public key
+        if (parsedData.rsa) {
+          const publicKeyJWK = JSON.parse(parsedData.rsa);
+          const publicKey = await window.crypto.subtle.importKey(
+            'jwk',
+            publicKeyJWK,
+            {
+              name: 'RSA-OAEP',
+              hash: 'SHA-256'
+            },
+            true,
+            ['encrypt']
+          );
+
+          return { rsa: publicKey };
+        }
       }
       return null;
     } catch (error) {

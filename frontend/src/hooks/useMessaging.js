@@ -1,43 +1,43 @@
 /**
  * React hook for secure messaging functionality
  * Handles message encryption, decryption, and real-time communication
+ * Uses RSA 2048-bit encryption and the Secure Key Exchange Protocol (SKEP)
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api.js';
-import { sessionManager, initiateKeyExchange, respondToKeyExchange, completeKeyExchange } from '../crypto/keyExchange.js';
-import { createEncryptedMessage, decryptReceivedMessage } from '../crypto/encryption.js';
-import { base64ToArrayBuffer } from '../crypto/ecc.js';
+import { sessionManager, EnhancedKeyExchange } from '../crypto/integratedKeyExchange.js';
+import { createEncryptedMessage, decryptReceivedMessage, generateIV } from '../crypto/encryption.js';
 
 /**
  * Hook for managing secure messaging
  */
 export function useMessaging(user, keys) {
-  console.log('useMessaging hook called with:', { 
-    hasUser: !!user, 
+  console.log('useMessaging hook called with:', {
+    hasUser: !!user,
     userId: user?.id,
     hasKeys: !!keys,
-    hasEccPrivate: !!keys?.eccPrivate 
+    hasRsaPrivate: !!keys?.rsaPrivate
   });
-  
+
   const [conversations, setConversations] = useState(new Map());
   const [activeConversation, setActiveConversation] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  
+
   // Message sequence tracking
   const sequenceNumbers = useRef(new Map()); // Map<userId, number>
   const usedNonces = useRef(new Map()); // Map<userId, Set<string>>
-  const pendingExchanges = useRef(new Map()); // Map<exchangeId, { userId, ephemeralPrivateKey }>
-  const cachedSigningKeys = useRef(new Map()); // Map<userId, CryptoKey>
+  const pendingExchanges = useRef(new Map()); // Map<exchangeId, { userId, keyExchangeInstance }>
+  const cachedPeerKeys = useRef(new Map()); // Map<userId, CryptoKey> - RSA public keys
   const pendingSessions = useRef(new Map()); // Map<userId, number> (last attempt timestamp)
   const pendingMessages = useRef(new Map()); // Map<userId, Array<{ content: string }>>
   const receivedMessageIds = useRef(new Set()); // Track processed message IDs
 
-  const getRemoteSigningKey = useCallback(async (otherUserId) => {
-    if (cachedSigningKeys.current.has(otherUserId)) {
-      return cachedSigningKeys.current.get(otherUserId);
+  const getRemotePublicKey = useCallback(async (otherUserId) => {
+    if (cachedPeerKeys.current.has(otherUserId)) {
+      return cachedPeerKeys.current.get(otherUserId);
     }
 
     const publicKeyPayload = await apiService.getUserPublicKey(otherUserId);
@@ -55,21 +55,25 @@ export function useMessaging(user, keys) {
       throw new Error('Invalid public key bundle received');
     }
 
-    if (!keyBundle.signing) {
-      throw new Error('Remote signing key missing');
+    if (!keyBundle.rsa) {
+      throw new Error('Remote RSA encryption key missing');
     }
 
-    const signingKeyData = base64ToArrayBuffer(keyBundle.signing);
-    const signingKey = await window.crypto.subtle.importKey(
-      'raw',
-      signingKeyData,
-      { name: 'ECDSA', namedCurve: 'P-384' },
+    // Import the RSA public key for encryption
+    const publicKeyJWK = JSON.parse(keyBundle.rsa);
+    const publicKey = await window.crypto.subtle.importKey(
+      'jwk',
+      publicKeyJWK,
+      {
+        name: 'RSA-OAEP',
+        hash: 'SHA-256'
+      },
       true,
-      ['verify']
+      ['encrypt']
     );
 
-    cachedSigningKeys.current.set(otherUserId, signingKey);
-    return signingKey;
+    cachedPeerKeys.current.set(otherUserId, publicKey);
+    return publicKey;
   }, []);
 
   /**
@@ -87,7 +91,7 @@ export function useMessaging(user, keys) {
 
       conversation.messages.push(message);
       conversation.lastActivity = Date.now();
-      
+
       // Increment unread count if not in active conversation
       if (activeConversation !== userId && message.senderId !== user?.id) {
         conversation.unreadCount += 1;
@@ -99,8 +103,7 @@ export function useMessaging(user, keys) {
   }, [activeConversation, user]);
 
   const currentUserId = user?.id;
-  const signingPrivateKey = keys?.signingPrivate;
-  const eccPrivateKey = keys?.eccPrivate;
+  const rsaPrivateKey = keys?.rsaPrivate;
 
   const queueMessageForUser = useCallback((targetUserId, content) => {
     if (!pendingMessages.current.has(targetUserId)) {
@@ -115,19 +118,23 @@ export function useMessaging(user, keys) {
     }
 
     const session = sessionManager.getSession(targetUserId);
-    if (!session) {
+    if (!session || !session.sessionKey) {
       throw new Error('Session not available for encryption');
     }
 
     const currentSeq = sequenceNumbers.current.get(targetUserId) || 0;
     const nextSeq = currentSeq + 1;
 
+    // Use session metadata for deterministic IV generation if available
+    const sessionMetadata = session.keys ? session.keys : null;
+
     const encryptedMessage = await createEncryptedMessage(
       plaintext,
       currentUserId,
       targetUserId,
       session.sessionKey,
-      nextSeq
+      nextSeq,
+      sessionMetadata
     );
 
     const response = await apiService.sendMessage(encryptedMessage);
@@ -176,7 +183,7 @@ export function useMessaging(user, keys) {
   const KEY_EXCHANGE_RETRY_DELAY = 5000;
 
   const ensureKeyExchange = useCallback(async (receiverId) => {
-    if (!currentUserId || !signingPrivateKey) {
+    if (!currentUserId || !rsaPrivateKey) {
       throw new Error('User keys not ready for key exchange');
     }
 
@@ -190,28 +197,29 @@ export function useMessaging(user, keys) {
     pendingSessions.current.set(receiverId, now);
 
     try {
-      console.log('No session found, initiating key exchange with:', receiverId);
+      console.log('No session found, initiating SKEP key exchange with:', receiverId);
 
-      const { keyExchangeMessage, ephemeralPrivateKey } = await initiateKeyExchange(
-        currentUserId,
-        receiverId,
-        signingPrivateKey
-      );
+      // Initialize a new enhanced key exchange instance using SKEP
+      const keyExchangeInstance = new EnhancedKeyExchange(currentUserId);
+      await keyExchangeInstance.initialize();
+
+      // Start the key exchange process
+      const keyExchangeMessage = await keyExchangeInstance.startKeyExchange(receiverId);
 
       const initiationResponse = await apiService.initiateKeyExchange(keyExchangeMessage);
 
       if (initiationResponse?.exchangeId) {
         pendingExchanges.current.set(initiationResponse.exchangeId, {
           userId: receiverId,
-          ephemeralPrivateKey
+          keyExchangeInstance
         });
       }
     } catch (error) {
-      console.error('Failed to initiate key exchange:', error);
+      console.error('Failed to initiate SKEP key exchange:', error);
       pendingSessions.current.delete(receiverId);
       throw error;
     }
-  }, [currentUserId, signingPrivateKey]);
+  }, [currentUserId, rsaPrivateKey]);
 
   /**
    * Handle incoming encrypted messages
@@ -237,8 +245,8 @@ export function useMessaging(user, keys) {
       return;
     }
     const session = sessionManager.getSession(senderId);
-    
-    if (!session) {
+
+    if (!session || !session.sessionKey) {
       console.error('No session found for sender:', senderId);
       return;
     }
@@ -276,7 +284,7 @@ export function useMessaging(user, keys) {
         targetSeq = incomingSeq;
       }
     }
-    
+
     // Get used nonces set
     if (!usedNonces.current.has(senderId)) {
       usedNonces.current.set(senderId, new Set());
@@ -328,8 +336,8 @@ export function useMessaging(user, keys) {
    * Send encrypted message to another user
    */
   const sendMessage = useCallback(async (receiverId, message) => {
-    if (!currentUserId || !eccPrivateKey) {
-      throw new Error('User not authenticated or keys not loaded');
+    if (!currentUserId || !rsaPrivateKey) {
+      throw new Error('User not authenticated or RSA keys not loaded');
     }
     if (!receiverId) {
       throw new Error('No recipient specified');
@@ -339,7 +347,7 @@ export function useMessaging(user, keys) {
       setIsLoading(true);
 
       const session = sessionManager.getSession(receiverId);
-      if (!session) {
+      if (!session || !session.sessionKey) {
         await ensureKeyExchange(receiverId);
         queueMessageForUser(receiverId, message);
         console.log('Message queued until key exchange completes');
@@ -357,7 +365,7 @@ export function useMessaging(user, keys) {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUserId, eccPrivateKey, ensureKeyExchange, queueMessageForUser, sendEncryptedMessage]);
+  }, [currentUserId, rsaPrivateKey, ensureKeyExchange, queueMessageForUser, sendEncryptedMessage]);
 
   /**
    * Load conversation history with a user
@@ -368,10 +376,10 @@ export function useMessaging(user, keys) {
 
       // Get session for decryption
       const session = sessionManager.getSession(userId);
-      if (!session) {
+      if (!session || !session.sessionKey) {
         // Try to load messages from backend (they'll be encrypted)
         const messages = await apiService.getMessages(userId);
-        
+
         // Create conversation without decrypted content
         const conversation = {
           userId,
@@ -482,7 +490,7 @@ export function useMessaging(user, keys) {
 
       try {
         await apiService.markMessagesRead(unreadMessages);
-        
+
         // Update local state
         setConversations(prev => {
           const newConversations = new Map(prev);
@@ -498,7 +506,7 @@ export function useMessaging(user, keys) {
   }, [conversations]);
 
   /**
-   * Key exchange placeholder handlers
+   * Key exchange handlers using SKEP
    */
   const initializeSessionState = useCallback((otherUserId) => {
     sequenceNumbers.current.set(otherUserId, 0);
@@ -507,44 +515,38 @@ export function useMessaging(user, keys) {
 
   const handleKeyExchangeInitiate = useCallback(async (message) => {
     const payload = message?.data || message;
-    if (!payload || !user || !signingPrivateKey) {
+    if (!payload || !user || !rsaPrivateKey) {
       return;
     }
 
     try {
-      const senderSigningKey = await getRemoteSigningKey(payload.fromUserId);
-      const { responseMessage, sessionKey } = await respondToKeyExchange(
-        {
-          senderId: payload.fromUserId,
-          receiverId: user.id,
-          ephemeralPublicKey: payload.ephemeralPublicKey,
-          timestamp: payload.timestamp,
-          nonce: payload.nonce,
-          signature: payload.signature
-        },
-        signingPrivateKey,
-        senderSigningKey
-      );
+      // Create a new key exchange instance to respond
+      const keyExchangeInstance = new EnhancedKeyExchange(user.id);
+      await keyExchangeInstance.initialize();
 
-      sessionManager.storeSession(payload.fromUserId, sessionKey);
-      initializeSessionState(payload.fromUserId);
-      pendingSessions.current.delete(payload.fromUserId);
-      await flushQueuedMessages(payload.fromUserId);
+      // Process the received hello message
+      const responseMessage = await keyExchangeInstance.processHelloMessage(payload);
 
-      await apiService.respondToKeyExchange({
-        exchangeId: payload.exchangeId,
-        ephemeralPublicKey: responseMessage.ephemeralPublicKey,
-        signature: responseMessage.signature,
-        timestamp: responseMessage.timestamp,
-        nonce: responseMessage.nonce
+      const exchangeId = payload.exchangeId || `exchange_${Date.now()}_${user.id}_${payload.senderId}`;
+
+      // Store the key exchange instance for later use
+      pendingExchanges.current.set(exchangeId, {
+        userId: payload.senderId,
+        keyExchangeInstance
       });
 
-      console.log('Key exchange response sent for user:', payload.fromUserId);
+      // Send the ephemeral key exchange response
+      await apiService.respondToKeyExchange({
+        exchangeId: exchangeId,
+        ...responseMessage
+      });
+
+      console.log('SKEP key exchange response sent for user:', payload.senderId);
     } catch (exchangeError) {
-      console.error('Failed to handle key exchange initiate:', exchangeError);
+      console.error('Failed to handle SKEP key exchange initiate:', exchangeError);
       setError('Failed to respond to key exchange. Please try again.');
     }
-  }, [user, signingPrivateKey, getRemoteSigningKey, initializeSessionState, flushQueuedMessages]);
+  }, [user, rsaPrivateKey]);
 
   const handleKeyExchangeResponse = useCallback(async (message) => {
     const payload = message?.data || message;
@@ -559,45 +561,71 @@ export function useMessaging(user, keys) {
     }
 
     try {
-      const receiverSigningKey = await getRemoteSigningKey(payload.fromUserId);
-      const { sessionKey } = await completeKeyExchange(
-        {
-          senderId: payload.fromUserId,
-          receiverId: user.id,
-          ephemeralPublicKey: payload.ephemeralPublicKey,
-          timestamp: payload.timestamp,
-          nonce: payload.nonce,
-          signature: payload.signature
-        },
-        pendingExchange.ephemeralPrivateKey,
-        receiverSigningKey
-      );
+      // Continue the key exchange process with the response
+      const keyExchangeInstance = pendingExchange.keyExchangeInstance;
+      const sessionId = payload.sessionId || `session_${Date.now()}_${user.id}_${pendingExchange.userId}`;
 
-      sessionManager.storeSession(pendingExchange.userId, sessionKey);
-      initializeSessionState(pendingExchange.userId);
-      pendingExchanges.current.delete(payload.exchangeId);
-      pendingSessions.current.delete(pendingExchange.userId);
-      await flushQueuedMessages(pendingExchange.userId);
+      // Process the ephemeral message and get session keys
+      const result = await keyExchangeInstance.processEphemeralMessage(payload, sessionId);
 
-      console.log('Key exchange completed with user:', pendingExchange.userId);
+      if (result && result.keys) {
+        // Store the session keys in the session manager
+        sessionManager.storeSession(pendingExchange.userId, {
+          sessionKey: result.keys.encryptionKey,
+          keys: result.keys,
+          confirmed: true,
+          createdAt: Date.now()
+        });
+
+        initializeSessionState(pendingExchange.userId);
+        pendingExchanges.current.delete(payload.exchangeId);
+        pendingSessions.current.delete(pendingExchange.userId);
+        await flushQueuedMessages(pendingExchange.userId);
+
+        console.log('SKEP key exchange completed with user:', pendingExchange.userId);
+      }
     } catch (completionError) {
-      console.error('Failed to complete key exchange:', completionError);
+      console.error('Failed to complete SKEP key exchange:', completionError);
       pendingExchanges.current.delete(payload.exchangeId);
       setError('Key exchange completion failed. Please retry.');
     }
-  }, [user, getRemoteSigningKey, initializeSessionState, flushQueuedMessages]);
+  }, [user, initializeSessionState, flushQueuedMessages]);
 
-  const handleKeyExchangeConfirmation = useCallback((message) => {
+  const handleKeyExchangeConfirmation = useCallback(async (message) => {
     const payload = message?.data || message;
-    console.log('Key exchange confirmation received:', payload);
-  }, []);
+    if (!payload || !user) {
+      return;
+    }
+
+    try {
+      // Process the key confirmation response
+      const pendingExchange = Array.from(pendingExchanges.current.values())
+        .find(ex => ex.userId === payload.senderId);
+
+      if (!pendingExchange) {
+        console.warn('No pending exchange found for confirmation:', payload.senderId);
+        return;
+      }
+
+      const keyExchangeInstance = pendingExchange.keyExchangeInstance;
+      const result = await keyExchangeInstance.processKeyConfirmationResponse(payload);
+
+      if (result.success) {
+        // Key exchange is now fully confirmed
+        console.log('SKEP key exchange confirmed with user:', payload.senderId);
+      }
+    } catch (confirmationError) {
+      console.error('Failed to handle key exchange confirmation:', confirmationError);
+      setError('Key exchange confirmation failed.');
+    }
+  }, [user]);
 
   /**
    * Connect to WebSocket for real-time messaging
    */
   const connectToWebSocket = useCallback(async () => {
     console.log('connectToWebSocket called');
-    
+
     try {
       // Set up connection state listener first
       apiService.onConnectionStateChange((state) => {
@@ -636,16 +664,16 @@ export function useMessaging(user, keys) {
   }, []);
 
   useEffect(() => {
-    if (user && keys.eccPrivate) {
-      console.log('User and keys available, connecting to WebSocket...', {
+    if (user && keys.rsaPrivate) {
+      console.log('User and RSA keys available, connecting to WebSocket...', {
         userId: user.id,
-        hasPrivateKey: !!keys.eccPrivate
+        hasPrivateKey: !!keys.rsaPrivate
       });
       connectToWebSocket();
     } else {
-      console.log('User or keys not available:', {
+      console.log('User or RSA keys not available:', {
         hasUser: !!user,
-        hasKeys: !!keys.eccPrivate
+        hasKeys: !!keys.rsaPrivate
       });
       sessionManager.clearAllSessions();
       sequenceNumbers.current.clear();
@@ -653,7 +681,7 @@ export function useMessaging(user, keys) {
     }
 
     const pendingExchangeMap = pendingExchanges.current;
-    const signingKeyCache = cachedSigningKeys.current;
+    const peerKeyCache = cachedPeerKeys.current;
     const sequenceMap = sequenceNumbers.current;
     const nonceMap = usedNonces.current;
     const pendingSessionMap = pendingSessions.current;
@@ -663,14 +691,14 @@ export function useMessaging(user, keys) {
     return () => {
       disconnectFromWebSocket();
       pendingExchangeMap.clear();
-      signingKeyCache.clear();
+      peerKeyCache.clear();
       sequenceMap.clear();
       nonceMap.clear();
       pendingSessionMap.clear();
       queuedMessageMap.clear();
       seenMessageSet.clear();
     };
-  }, [user, keys.eccPrivate, connectToWebSocket, disconnectFromWebSocket]);
+  }, [user, keys.rsaPrivate, connectToWebSocket, disconnectFromWebSocket]);
 
   /**
    * Clear error state
