@@ -5,6 +5,7 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const messageRoutes = require('./routes/messages');
 const { authenticateToken } = require('./middleware/auth');
 require('dotenv').config();
 
@@ -62,6 +63,9 @@ app.use('/api/auth', authRoutes);
 
 // Use user routes
 app.use('/api/users', userRoutes);
+
+// Use message routes
+app.use('/api/messages', messageRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
