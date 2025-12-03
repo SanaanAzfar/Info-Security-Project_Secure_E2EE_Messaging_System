@@ -8,20 +8,29 @@ jest.mock('../utils/emailService', () => ({
 }));
 
 describe('Authentication Integration Tests', () => {
-  describe('POST /register', () => {
+  describe('POST /api/auth/register', () => {
     it('should register a new user successfully', async () => {
       const userData = {
         username: 'testuser',
         email: 'test@example.com',
-        password: 'password123'
+        password: 'password123',
+        publicKey: JSON.stringify({
+          ecc: 'test-ecc-public-key',
+          signing: 'test-signing-public-key',
+          timestamp: Date.now()
+        })
       };
 
       const response = await request(app)
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userData)
         .expect(201);
 
-      expect(response.body).toHaveProperty('message', 'User registered successfully');
+      expect(response.body).toHaveProperty('success', true);
+      expect(response.body).toHaveProperty('token');
+      expect(response.body).toHaveProperty('user');
+      expect(response.body.user).toHaveProperty('username', 'testuser');
+      expect(response.body.user).toHaveProperty('email', 'test@example.com');
 
       // Verify user was created in database
       const user = await User.findOne({ email: userData.email });
@@ -32,18 +41,23 @@ describe('Authentication Integration Tests', () => {
 
     it('should return 400 for missing required fields', async () => {
       const response = await request(app)
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send({ username: 'testuser' })
         .expect(400);
 
-      expect(response.body).toHaveProperty('error', 'Username, email, and password are required');
+      expect(response.body).toHaveProperty('error', 'Username, email, password, and publicKey are required');
     });
 
     it('should return 400 for existing user', async () => {
       const userData = {
         username: 'existinguser',
         email: 'existing@example.com',
-        password: 'password123'
+        password: 'password123',
+        publicKey: JSON.stringify({
+          ecc: 'test-ecc-public-key',
+          signing: 'test-signing-public-key',
+          timestamp: Date.now()
+        })
       };
 
       // Create user first
@@ -51,7 +65,7 @@ describe('Authentication Integration Tests', () => {
 
       // Try to register again
       const response = await request(app)
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userData)
         .expect(400);
 
@@ -62,11 +76,16 @@ describe('Authentication Integration Tests', () => {
       const userData = {
         username: 'ab', // too short
         email: 'test@example.com',
-        password: 'password123'
+        password: 'password123',
+        publicKey: JSON.stringify({
+          ecc: 'test-ecc-public-key',
+          signing: 'test-signing-public-key',
+          timestamp: Date.now()
+        })
       };
 
       const response = await request(app)
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userData)
         .expect(400);
 
@@ -77,11 +96,16 @@ describe('Authentication Integration Tests', () => {
       const userData = {
         username: 'testuser',
         email: 'test@example.com',
-        password: '12345' // too short
+        password: '12345', // too short
+        publicKey: JSON.stringify({
+          ecc: 'test-ecc-public-key',
+          signing: 'test-signing-public-key',
+          timestamp: Date.now()
+        })
       };
 
       const response = await request(app)
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userData)
         .expect(400);
 
@@ -89,13 +113,18 @@ describe('Authentication Integration Tests', () => {
     });
   });
 
-  describe('POST /login', () => {
+  describe('POST /api/auth/login', () => {
     beforeEach(async () => {
       // Create a test user for login tests
       const userData = {
         username: 'testuser',
         email: 'test@example.com',
-        password: 'password123'
+        password: 'password123',
+        publicKey: JSON.stringify({
+          ecc: 'test-ecc-public-key',
+          signing: 'test-signing-public-key',
+          timestamp: Date.now()
+        })
       };
       await User.create(userData);
     });
@@ -107,7 +136,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send(loginData)
         .expect(200);
 
@@ -126,7 +155,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send(loginData)
         .expect(200);
 
@@ -145,7 +174,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send(loginData)
         .expect(401);
 
@@ -159,7 +188,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send(loginData)
         .expect(401);
 
@@ -168,7 +197,7 @@ describe('Authentication Integration Tests', () => {
 
     it('should return 400 for missing fields', async () => {
       const response = await request(app)
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send({ identifier: 'testuser' })
         .expect(400);
 
@@ -176,7 +205,7 @@ describe('Authentication Integration Tests', () => {
     });
   });
 
-  describe('POST /verify-otp', () => {
+  describe('POST /api/auth/verify-otp', () => {
     let otp;
 
     beforeEach(async () => {
@@ -184,7 +213,12 @@ describe('Authentication Integration Tests', () => {
       const userData = {
         username: 'testuser',
         email: 'test@example.com',
-        password: 'password123'
+        password: 'password123',
+        publicKey: JSON.stringify({
+          ecc: 'test-ecc-public-key',
+          signing: 'test-signing-public-key',
+          timestamp: Date.now()
+        })
       };
       await User.create(userData);
 
@@ -194,7 +228,7 @@ describe('Authentication Integration Tests', () => {
         password: 'password123'
       };
       await request(app)
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send(loginData);
 
       // Get the OTP from database
@@ -209,7 +243,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/verify-otp')
+        .post('/api/auth/verify-otp')
         .send(verifyData)
         .expect(200);
 
@@ -231,7 +265,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/verify-otp')
+        .post('/api/auth/verify-otp')
         .send(verifyData)
         .expect(401);
 
@@ -250,7 +284,7 @@ describe('Authentication Integration Tests', () => {
       };
 
       const response = await request(app)
-        .post('/auth/verify-otp')
+        .post('/api/auth/verify-otp')
         .send(verifyData)
         .expect(401);
 
@@ -259,7 +293,7 @@ describe('Authentication Integration Tests', () => {
 
     it('should return 400 for missing fields', async () => {
       const response = await request(app)
-        .post('/auth/verify-otp')
+        .post('/api/auth/verify-otp')
         .send({ identifier: 'testuser' })
         .expect(400);
 

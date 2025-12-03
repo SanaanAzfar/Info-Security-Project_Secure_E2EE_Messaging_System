@@ -18,6 +18,7 @@ const { register, login, verifyOtp } = require('../controllers/authController');
  *               - username
  *               - email
  *               - password
+ *               - publicKey
  *             properties:
  *               username:
  *                 type: string
@@ -29,9 +30,32 @@ const { register, login, verifyOtp } = require('../controllers/authController');
  *               password:
  *                 type: string
  *                 minLength: 6
+ *               publicKey:
+ *                 type: string
+ *                 description: JSON string containing ECC and signing public keys
  *     responses:
  *       201:
  *         description: User registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 token:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     username:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     publicKey:
+ *                       type: string
  *       400:
  *         description: Invalid input or user already exists
  *       500:
