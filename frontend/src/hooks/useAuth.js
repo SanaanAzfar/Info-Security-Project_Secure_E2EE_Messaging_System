@@ -212,6 +212,38 @@ export function useAuth() {
   }, []);
 
   /**
+   * Fetch user's contacts from backend
+   * @returns {Promise<Array>} - Array of contacts
+   */
+  const fetchContacts = useCallback(async () => {
+    try {
+      const response = await apiService.getContacts();
+      setContacts(response.contacts || []);
+      return response.contacts || [];
+    } catch (error) {
+      console.error('Failed to fetch contacts:', error);
+      setError(error.message || 'Failed to fetch contacts');
+      return [];
+    }
+  }, []);
+
+  /**
+   * Fetch user profile from backend
+   * @returns {Promise<Object>} - User profile data
+   */
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const response = await apiService.getUserProfile();
+      setUser(response.user);
+      return response.user;
+    } catch (error) {
+      console.error('Failed to fetch user profile:', error);
+      setError(error.message || 'Failed to fetch user profile');
+      return null;
+    }
+  }, []);
+
+  /**
    * Clear error state
    */
   const clearError = useCallback(() => {
@@ -229,6 +261,8 @@ export function useAuth() {
     verifyOtp,
     logout,
     addContact,
+    fetchContacts,
+    fetchUserProfile,
     clearError,
     checkAuthStatus
   };

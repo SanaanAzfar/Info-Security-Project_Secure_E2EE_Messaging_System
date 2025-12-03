@@ -181,7 +181,15 @@ class ApiService {
    * @returns {Promise<Object>} - User profile data
    */
   async getUserProfile() {
-    return this.apiRequest('/user/profile');
+    return this.apiRequest('/users/profile');
+  }
+
+  /**
+   * Get user's contacts
+   * @returns {Promise<Object>} - Contacts data
+   */
+  async getContacts() {
+    return this.apiRequest('/users/contacts');
   }
 
   /**
