@@ -87,13 +87,6 @@ export function useAuth() {
           storePublicKey(`${response.user.id}_signing`, signingKeyPair.publicKey)
         ]);
 
-        // Auto-login after successful registration
-        if (response.token) {
-          apiService.setAuthToken(response.token);
-          setUser(response.user);
-          setIsAuthenticated(true);
-        }
-
         return true;
       }
 
@@ -108,10 +101,10 @@ export function useAuth() {
   }, []);
 
   /**
-   * Login user
+   * Login user (first step - request OTP)
    * @param {string} email - User email
    * @param {string} password - User password
-   * @returns {Promise<boolean>} - Success status
+   * @returns {Promise<Object>} - Login response (requires OTP verification)
    */
   const login = useCallback(async (email, password) => {
     try {
@@ -121,9 +114,41 @@ export function useAuth() {
       console.log('Starting login process...');
       const response = await apiService.login(email, password);
 
+      // Check if OTP was sent successfully
+      if (response.message && response.message.includes('OTP sent')) {
+        return { success: true, requiresOtp: true, identifier: email };
+      }
+
+      // If login failed or unexpected response
+      setError('Invalid email or password');
+      return { success: false };
+    } catch (error) {
+      console.error('Login error:', error);
+      setError(error.message || 'Login failed');
+      return { success: false };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Verify OTP and complete login
+   * @param {string} identifier - Email/username used for login
+   * @param {string} otp - OTP code
+   * @param {string} password - User password for key decryption
+   * @returns {Promise<Object>} - Verification response
+   */
+  const verifyOtp = useCallback(async (identifier, otp, password) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      console.log('Verifying OTP...');
+      const response = await apiService.verifyOtp(identifier, otp);
+
       if (response.success && response.user) {
-        console.log('Login API successful, checking keys...');
-        
+        console.log('OTP verification successful, checking keys...');
+
         // Verify that user's private keys can be retrieved
         const eccPrivateKey = await retrievePrivateKey(`${response.user.id}_ecc`, password);
         const signingPrivateKey = await retrievePrivateKey(`${response.user.id}_signing`, password);
@@ -136,16 +161,16 @@ export function useAuth() {
         setUser(response.user);
         setContacts(response.contacts || []);
         setIsAuthenticated(true);
-        
+
         // Return user data for key loading in App component
         return { success: true, user: response.user };
       }
 
-      setError('Invalid email or password');
+      setError('Invalid OTP');
       return { success: false };
     } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message || 'Login failed');
+      console.error('OTP verification error:', error);
+      setError(error.message || 'OTP verification failed');
       return { success: false };
     } finally {
       setIsLoading(false);
@@ -201,6 +226,7 @@ export function useAuth() {
     contacts,
     register,
     login,
+    verifyOtp,
     logout,
     addContact,
     clearError,
