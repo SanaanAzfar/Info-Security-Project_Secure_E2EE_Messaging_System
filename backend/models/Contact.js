@@ -14,6 +14,14 @@ const contactSchema = new mongoose.Schema({
   addedAt: {
     type: Date,
     default: Date.now
+  },
+  lastSeen: {
+    type: Date,
+    default: null
+  },
+  isOnline: {
+    type: Boolean,
+    default: false
   }
 });
 
