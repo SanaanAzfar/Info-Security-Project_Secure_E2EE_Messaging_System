@@ -93,21 +93,21 @@ export function useAuth() {
 
   /**
    * Login user (first step - request OTP)
-   * @param {string} email - User email
+   * @param {string} identifier - Email or username
    * @param {string} password - User password
    * @returns {Promise<Object>} - Login response (requires OTP verification)
    */
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (identifier, password) => {
     try {
       setIsLoading(true);
       setError(null);
 
       console.log('Starting login process...');
-      const response = await apiService.login(email, password);
+      const response = await apiService.login(identifier, password);
 
       // Check if OTP was sent successfully
       if (response.message && response.message.includes('OTP sent')) {
-        return { success: true, requiresOtp: true, identifier: email };
+        return { success: true, requiresOtp: true, identifier: identifier };
       }
 
       // If login failed or unexpected response
@@ -140,8 +140,11 @@ export function useAuth() {
       if (response.success && response.user) {
         console.log('OTP verification successful, checking keys...');
 
+        // Use the user's email from the response to retrieve keys (keys stored with email identifier)
+        const userIdForKeys = response.user.email;
+
         // Verify that user's private keys can be retrieved
-        const rsaPrivateKey = await keyManager.retrievePrivateKey(`${identifier}_rsa`, password);
+        const rsaPrivateKey = await keyManager.retrievePrivateKey(`${userIdForKeys}_rsa`, password);
 
         if (!rsaPrivateKey) {
           throw new Error('Unable to retrieve your private keys. Please contact support.');

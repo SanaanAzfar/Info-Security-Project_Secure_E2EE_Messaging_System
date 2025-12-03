@@ -15,9 +15,9 @@ import './App.css';
 function App() {
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register' | 'otp'
   const [otpData, setOtpData] = useState(null); // { identifier, password }
-  const { user, isAuthenticated, isLoading, error, contacts, register, login, verifyOtp, logout, addContact, clearError } = useAuth();
+  const { user, isAuthenticated, isLoading, error, contacts, register, login, verifyOtp, logout, addContact, clearError, fetchUserProfile } = useAuth();
   const { keys, loadKeys, clearKeys } = useKeys();
-  
+
   console.log('App component render:', {
     hasUser: !!user,
     userId: user?.id,
@@ -26,8 +26,17 @@ function App() {
     keyProps: Object.keys(keys || {}),
     hasEccPrivate: !!keys?.eccPrivate
   });
-  
+
   const messaging = useMessaging(user, keys);
+
+  // Load user keys when user is authenticated and user object is available
+  useEffect(() => {
+    if (isAuthenticated && user && user.email) {
+      // On initial load after authentication, we can't load keys without password
+      // Keys will be loaded after login/registration when password is available
+      console.log('User authenticated, keys should already be loaded after login');
+    }
+  }, [isAuthenticated, user, loadKeys]);
 
   // Clear keys when user logs out
   useEffect(() => {
@@ -56,9 +65,9 @@ function App() {
     }
   }, [error, clearError]);
 
-  const handleLogin = async (email, password) => {
+  const handleLogin = async (identifier, password) => {
     console.log('handleLogin called');
-    const loginResult = await login(email, password);
+    const loginResult = await login(identifier, password);
     console.log('Login result:', loginResult);
 
     if (loginResult.success && loginResult.requiresOtp) {
@@ -68,8 +77,8 @@ function App() {
       return true;
     } else if (loginResult.success && loginResult.user) {
       // Load user keys after successful login using the returned user data
-      console.log('Loading keys for user:', loginResult.user.id);
-      const keysLoaded = await loadKeys(loginResult.user.id, password);
+      console.log('Loading keys for user:', loginResult.user.email);
+      const keysLoaded = await loadKeys(loginResult.user.email, password);
       console.log('Keys loaded result:', keysLoaded);
       console.log('Keys state after loading:', keys);
       return true;
@@ -83,9 +92,9 @@ function App() {
     console.log('Verify OTP result:', verifyResult);
 
     if (verifyResult.success && verifyResult.user) {
-      // Load user keys after successful OTP verification
-      console.log('Loading keys for user:', verifyResult.user.id);
-      const keysLoaded = await loadKeys(verifyResult.user.id, otpData.password);
+      // Load user keys after successful OTP verification using the user's email
+      console.log('Loading keys for user:', verifyResult.user.email);
+      const keysLoaded = await loadKeys(verifyResult.user.email, otpData.password);
       console.log('Keys loaded result:', keysLoaded);
       console.log('Keys state after loading:', keys);
       setOtpData(null); // Clear OTP data
@@ -158,7 +167,7 @@ function App() {
             </button>
           </div>
         </div>
-        
+
         <div className="app-content">
           <ChatInterface
             conversations={messaging.conversations}
@@ -171,7 +180,7 @@ function App() {
             onContactAdded={handleContactAdded}
           />
         </div>
-        
+
         {messaging.error && (
           <div className="global-error">
             {messaging.error}

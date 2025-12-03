@@ -7,7 +7,7 @@ import './Auth.css';
 
 export function LoginForm({ onLogin, onSwitchToRegister, isLoading, error }) {
   const [formData, setFormData] = useState({
-    email: '',
+    identifier: '',
     password: ''
   });
   const [formErrors, setFormErrors] = useState({});
@@ -18,7 +18,7 @@ export function LoginForm({ onLogin, onSwitchToRegister, isLoading, error }) {
       ...prev,
       [name]: value
     }));
-    
+
     // Clear field error when user starts typing
     if (formErrors[name]) {
       setFormErrors(prev => ({
@@ -30,32 +30,33 @@ export function LoginForm({ onLogin, onSwitchToRegister, isLoading, error }) {
 
   const validateForm = () => {
     const errors = {};
-    
-    if (!formData.email) {
-      errors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
+
+    if (!formData.identifier) {
+      errors.identifier = 'Email or username is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.identifier) &&
+               !/^[a-zA-Z0-9_]{3,50}$/.test(formData.identifier)) {
+      errors.identifier = 'Please enter a valid email or username';
     }
-    
+
     if (!formData.password) {
       errors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       errors.password = 'Password must be at least 6 characters';
     }
-    
+
     return errors;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
-    
-    await onLogin(formData.email, formData.password);
+
+    await onLogin(formData.identifier, formData.password);
   };
 
   return (
@@ -68,18 +69,19 @@ export function LoginForm({ onLogin, onSwitchToRegister, isLoading, error }) {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="email">Email Address</label>
+            <label htmlFor="identifier">Email or Username</label>
             <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
+              type="text"
+              id="identifier"
+              name="identifier"
+              value={formData.identifier}
               onChange={handleInputChange}
-              className={formErrors.email ? 'error' : ''}
+              className={formErrors.identifier ? 'error' : ''}
               disabled={isLoading}
-              autoComplete="email"
+              autoComplete="username"
+              placeholder="Email or username"
             />
-            {formErrors.email && <span className="error-message">{formErrors.email}</span>}
+            {formErrors.identifier && <span className="error-message">{formErrors.identifier}</span>}
           </div>
 
           <div className="form-group">
@@ -103,8 +105,8 @@ export function LoginForm({ onLogin, onSwitchToRegister, isLoading, error }) {
             </div>
           )}
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="auth-button primary"
             disabled={isLoading}
           >
@@ -122,8 +124,8 @@ export function LoginForm({ onLogin, onSwitchToRegister, isLoading, error }) {
         <div className="auth-footer">
           <p>
             Don't have an account?{' '}
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="link-button"
               onClick={onSwitchToRegister}
               disabled={isLoading}
